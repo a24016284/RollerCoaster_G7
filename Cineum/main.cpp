@@ -5,101 +5,108 @@
 
 using namespace std;
 
-// commentaire à mettre
-mutex mutexBoard;
-mutex mutexUnboard;
+// protect the counters used during entrance and exit
+mutex mutexEntrance;
+mutex mutexExit;
 
-counting_semaphore<> boardQueue{0};
-counting_semaphore<> unBoardQueue{0};
+//Control how many spectators are allowed to enter or exit the theater
+counting_semaphore<> entranceQueue{0};
+counting_semaphore<> exitQueue{0};
 
-counting_semaphore<> allAboard{0};
-counting_semaphore<> allAshore{0};
+// Notify the theater when all the spectators have enter or exit
+counting_semaphore<> allInside{0};
+counting_semaphore<> allOutside{0};
 
-unsigned boarders (0);
-unsigned unboarders (0);
+// Track the number of the inbounds and outbounds
+unsigned inbounds (0);
+unsigned outbounds (0);
 
-void run(){
-    cout << "Eh zeeeee partiiiii" << endl;
+void play(){
+    // simulate the beginning of the movie
+    cout << "Nous vous souhaitons une bonne séance" << endl;
 }
 
-void load(){
-    cout << "Le train en direction du bonheur est entré en gare" << endl;
+void startSession(){
+    //Annouce that the session is ready to be start
+    cout << "Prenez place ! La séance démarrera juste après la pub ! " << endl;
 }
 
-void unload(){
-    cout << "Vous etes bien arrivé en gare dite du bonheur" << endl;
+void stopSession(){
+    //Annouce that the session is over
+    cout << "Merci de vous diriger vers la sortie, n'oubliez pas de jeter vos dechets." << endl;
 }
 
-void board(){
-    cout << "Un passager rentre dans le train, helloooooooo mister passager" << endl;
+void takeASeat(){
+    //Simulate a spectator taking a seat for the session
+    cout << "Un spectateur rentre dans la salle de cinéma et s'installe confortablement." << endl;
 }
 
-void unboard(){
-    cout << "Un passager descend du train, bye bye le passager" << endl;
+void leaveASeat(){
+    //simulate a spectator leaving a seat at the end of the session
+    cout << "Un spectateur sort de la salle de cinéma après avoir jeter ses déchets." << endl;
 }
 
-void car_function(unsigned C){
-    load();
-    boardQueue.release(C); //signal
-    allAboard.acquire(); //wait
+void theater_function(unsigned C){
 
-    run();
+    startSession();
+    entranceQueue.release(C); //signal
+    allInside.acquire(); //wait
 
-    unload();
-    unBoardQueue.release(C);
-    allAshore.acquire();
+    play();
+
+    stopSession();
+    exitQueue.release(C);
+    allOutside.acquire();
 
 }
 
-void passenger_function(unsigned C){
-    cout << "test";
-    boardQueue.acquire();
-    board();
+void spectator_function(unsigned C){
+    entranceQueue.acquire();
+    takeASeat();
 
-    mutexBoard.lock();
-    boarders +=1;
-    if (boarders==C){
-        allAboard.release();
-        boarders=0;
+    mutexEntrance.lock();
+    inbounds +=1;
+    if (inbounds==C){
+        allInside.release();
+        inbounds=0;
     }
-    mutexBoard.unlock();
+    mutexEntrance.unlock();
 
-    unBoardQueue.acquire();
-    unboard();
+    exitQueue.acquire();
+    leaveASeat();
 
-    mutexUnboard.lock();
-    unboarders +=1;
-    if (unboarders==C){
-        allAshore.release();
-        unboarders=0;
+    mutexExit.lock();
+    outbounds +=1;
+    if (outbounds==C){
+        allOutside.release();
+        outbounds=0;
     }
-    mutexUnboard.unlock();
+    mutexExit.unlock();
 }
 
 
 int main()
 {
-    unsigned C (2);
-    unsigned nbPassengers(10);
-    if (nbPassengers <  C )
+    unsigned places (5);
+    unsigned nbViewers(11);
+    if (nbViewers <  places )
     {
-        cerr << "Le nombre de passagers est pas bon." << endl;
+        cerr << "Condition non respectée : places < nombre de spectateurs" << endl;
         return 1;
     }
-    thread wagon(car_function,C);
+    thread theater(theater_function,places);
 
 
-    vector<thread> passengers;
-    cout << "test2";
-    for (unsigned n=0; nbPassengers>n; n++){
-        passengers.emplace_back(passenger_function, C);
+    vector<thread> spectators;
+    for (unsigned n=0; nbViewers>n; n++){
+        spectators.emplace_back(spectator_function, places);
     }
 
-    for (thread & passenger : passengers){
-        passenger.join();
+    for (thread & viewer : spectators){
+        viewer.join();
     }
 
-    wagon.join();
+    theater.join();
 
     return 0;
 
