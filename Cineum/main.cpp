@@ -2,8 +2,11 @@
 #include <thread>
 #include <semaphore>
 #include <vector>
+#include <atomic>
 
 using namespace std;
+
+atomic<bool> closed(false);
 
 // protect the counters used during entrance and exit
 mutex mutexEntrance;
@@ -26,86 +29,110 @@ void play(){
     cout << "Nous vous souhaitons une bonne séance" << endl;
 }
 
-void startSession(){
+void startSession(unsigned places){
     //Annouce that the session is ready to be start
     cout << "Prenez place ! La séance démarrera juste après la pub ! " << endl;
+    entranceQueue.release(places);
+    allInside.acquire();
 }
 
-void stopSession(){
+void stopSession(unsigned places){
     //Annouce that the session is over
     cout << "Merci de vous diriger vers la sortie, n'oubliez pas de jeter vos dechets." << endl;
-}
-
-void takeASeat(){
-    //Simulate a spectator taking a seat for the session
-    cout << "Un spectateur rentre dans la salle de cinéma et s'installe confortablement." << endl;
-}
-
-void leaveASeat(){
-    //simulate a spectator leaving a seat at the end of the session
-    cout << "Un spectateur sort de la salle de cinéma après avoir jeter ses déchets." << endl;
-}
-
-void theater_function(unsigned C){
-
-    startSession();
-    entranceQueue.release(C); //signal
-    allInside.acquire(); //wait
-
-    play();
-
-    stopSession();
-    exitQueue.release(C);
+    exitQueue.release(places);
     allOutside.acquire();
-
 }
 
-void spectator_function(unsigned C){
-    entranceQueue.acquire();
-    takeASeat();
-
+void takeASeat(unsigned places){
+    //Simulate a spectator taking a seat for the session
+    //Update the number of spectators who have entered
     mutexEntrance.lock();
+    cout << "Un spectateur rentre dans la salle de cinéma et s'installe confortablement." << endl;
     inbounds +=1;
-    if (inbounds==C){
+    //Notify the theater when all C spectators have entered
+    if (inbounds==places){
         allInside.release();
         inbounds=0;
     }
     mutexEntrance.unlock();
+}
 
-    exitQueue.acquire();
-    leaveASeat();
-
+void leaveASeat(unsigned places){
+    //Simulate a spectator leaving their seat at the end of the session
+    //Update the number of spectators who have left
     mutexExit.lock();
+    cout << "Un spectateur sort de la salle de cinéma après avoir jeter ses déchets." << endl;
     outbounds +=1;
-    if (outbounds==C){
+
+    //Notify the theater when all C spectators have left
+    if (outbounds==places){
         allOutside.release();
         outbounds=0;
     }
     mutexExit.unlock();
 }
 
+void theater_function(unsigned places, unsigned nbViewers){
+    // Number of full sessions we can run
+    unsigned nbSessions = nbViewers / places;
+
+    for (unsigned s = 0; s < nbSessions; ++s) {
+        startSession(places);
+        play();
+        stopSession(places);
+    }
+
+    // Not enough spectators left: close the theater
+    closed = true;
+    unsigned remaining = nbViewers % places;
+    if (remaining > 0) {
+        entranceQueue.release(remaining);   // wake up the remaining spectators
+    }
+    cout << "Le cinéma ferme, pas assez de spectateurs pour une nouvelle séance." << endl;
+}
+
+void spectator_function(unsigned places){
+    // Wait for permission to enter the theater
+    entranceQueue.acquire();
+
+    // Woken up after closing: go home without entering
+    if (closed) {
+        cout << "Un spectateur repart, le cinéma est fermé." << endl;
+        return;
+    }
+
+    takeASeat(places);
+    exitQueue.acquire();
+    leaveASeat(places);
+}
 
 int main()
 {
+    //Define the number of seats and spectators
     unsigned places (5);
-    unsigned nbViewers(11);
+    unsigned nbViewers(12);
+    //Check that there are at least as many spectators as seats
     if (nbViewers <  places )
     {
         cerr << "Condition non respectée : places < nombre de spectateurs" << endl;
         return 1;
     }
-    thread theater(theater_function,places);
+    //Create the theater thread
+    thread theater(theater_function,places, nbViewers);
 
 
+    //Create one thread for each spectator
     vector<thread> spectators;
     for (unsigned n=0; nbViewers>n; n++){
         spectators.emplace_back(spectator_function, places);
     }
 
+    //Wait for all spectator threads to finish
     for (thread & viewer : spectators){
         viewer.join();
     }
 
+    //Wait for the theater thread to finish
     theater.join();
 
     return 0;
