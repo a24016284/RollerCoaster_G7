@@ -4,4 +4,7 @@ CONFIG -= app_bundle
 CONFIG -= qt
 
 SOURCES += \
-        main.cpp
+    cineum_correct.cpp \
+    cineum_correct_deadlock.cpp
+
+HEADERS +=

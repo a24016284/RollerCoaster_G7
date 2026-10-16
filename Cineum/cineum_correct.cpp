@@ -106,7 +106,7 @@ void spectator_function(unsigned places){
     leaveASeat(places);
 }
 
-int main()
+int main_correct()
 {
     //Define the number of seats and spectators
     unsigned places (5);
